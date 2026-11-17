@@ -1,0 +1,29 @@
+# 本地密钥和配置
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+
+# Python 虚拟环境和缓存
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+
+# 本地日志和临时文件
+*.log
+*.tmp
+*.bak
+final_app.py.bak_*
+
+# 旧版、容易误导的演示截图
+images/bm25_demo.png
+images/es_demo.png
+
+# 编辑器和操作系统文件
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

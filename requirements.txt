@@ -1,0 +1,24 @@
+# RAG 文档问答应用依赖
+# Python 3.11+ 推荐
+
+# 前端界面
+streamlit>=1.30.0
+
+# 读取 .env 配置
+python-dotenv>=1.0.0
+
+# 通义千问智能体框架（含 BM25 检索工具）
+qwen-agent>=0.0.9
+
+# Elasticsearch 客户端
+elasticsearch>=8.11.0,<9.0.0
+
+# 以下为实际安装验证过的补充依赖（2026-11-10 在 Python 3.11 上跑通）
+# qwen-agent 会强制 import 这些包，但它的 METADATA 里没有声明，缺了会直接 ImportError
+soundfile>=0.12.1        # qwen_agent/utils/utils.py 需要
+tqdm>=4.65.0             # qwen_agent/tools/python_executor.py 需要
+rank_bm25>=0.2.2         # BM25 检索核心
+jieba>=0.42.1            # 中文分词，BM25 必需
+pebble                   # qwen_agent python-executor 扩展
+multiprocess
+timeout_decorator
