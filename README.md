@@ -1,6 +1,6 @@
-# 文档 RAG 问答系统（BM25）
+# 文档 RAG 问答系统（BM25 / Elasticsearch）
 
-面向小规模文档知识库的 RAG 问答原型：先把文档切成段落并建立 BM25 索引，再把检索到的原文片段连同来源和得分一起注入提示词，让大模型只依据证据回答。
+面向小规模文档知识库的 RAG 问答原型：先把文档切成段落并建立 BM25 索引，再把检索到的原文片段连同来源和得分一起注入提示词，让大模型只依据证据回答。项目同时保留一个 Elasticsearch 分支，用于验证文档规模增长后的扩展路径。
 
 这是一个个人项目原型，不是企业级知识库产品，也没有真实企业用户和线上流量。
 
@@ -14,6 +14,10 @@ BM25 检索答案与来源展示：
 
 ![无命中时的拒答](images/rag_no_hit.png)
 
+Elasticsearch 分支的检索结果：
+
+![Elasticsearch 分支的检索结果](images/es_streamlit.png)
+
 ## 项目定位
 
 项目重点不是“换更大的模型”，而是处理 RAG 里的三个产品问题：
@@ -21,6 +25,12 @@ BM25 检索答案与来源展示：
 1. 用户的问题能不能找到对应资料；
 2. 回答能不能展示来源，让用户核对依据；
 3. 找不到依据时，系统是否敢明确说不知道。
+
+## 两套检索方案的分工
+
+- **BM25 内存检索**：不依赖外部服务，适合小规模文档；当前 14 篇、86 段，启动成本低，适合作为默认方案。
+- **Elasticsearch 分支**：面向文档规模增长后的扩展方案，索引和检索从进程内移到独立服务；更适合后续做多文档、增量索引和水平扩展。
+- 当前 ES 只做了本地单节点验证，不是生产集群；86 个段落也不构成“海量文档”场景。
 
 ## 当前实现
 
@@ -30,7 +40,8 @@ BM25 检索答案与来源展示：
 - 检索 Top-5 片段，并对命中片段补充同源上一段和下一段；
 - 将检索证据直接注入提示词，由 qwen-flash 组织答案；
 - 界面展示命中片段、来源文件和 BM25 得分；
-- 没有检索到内容时，提示“知识库中没有相关内容”。
+- 没有检索到内容时，提示“知识库中没有相关内容”；
+- 侧边栏可切换 BM25 / Elasticsearch 两套方案，ES 模式支持从同一批 86 段构建索引并返回 Top-5。
 
 当前知识库包含 14 篇文档、86 个段落，平均每段约 133.5 字。
 
@@ -42,7 +53,7 @@ BM25 检索答案与来源展示：
 | 检索 | rank_bm25 + jieba |
 | 大模型 | 阿里云百炼 qwen-flash |
 | Agent 框架 | qwen-agent（仅用于对话封装） |
-| Elasticsearch 分支 | 已写检索代码与方案，但未部署验证 |
+| Elasticsearch 分支 | 本地 Docker 8.11 已验证，非生产集群 |
 | 语言 | Python 3.11 |
 
 ## 处理链路
@@ -61,6 +72,20 @@ qwen-flash 生成答案
 展示答案、来源文件、BM25 得分
 ```
 
+ES 分支的链路：
+
+```text
+86 个段落
+    ↓ bulk 写入 doc_index
+Elasticsearch 单节点
+    ↓ match 查询 content 字段
+Top-5 命中片段
+    ↓ 取前 3 段作为上下文
+qwen-flash 生成答案
+    ↓
+展示片段、来源、ES 相关性得分
+```
+
 ## 已验证结果
 
 核实日期：2026-11-17。
@@ -72,6 +97,7 @@ qwen-flash 生成答案
 | 单次检索 | 完整工具调用约 0.45—1.7 毫秒，纯 BM25 打分约 0.04—0.06 毫秒 |
 | 域内问题 | 4 个预设问题 Top-1 均命中 |
 | 域外问题 | 无命中时提示“知识库中没有相关内容”；弱相关召回时由模型判断证据不足并拒答 |
+| ES 本地验证 | 86 段写入 `doc_index`；同一问题 Top-1 为 `02_BM25检索算法详解.txt`，得分 21.22 |
 
 4 个预设域内问题：
 
@@ -114,6 +140,28 @@ QWEN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 
 浏览器打开 `http://localhost:8501`，默认进入 BM25 内存检索模式。
 
+### 4. 可选：启动本地 Elasticsearch 分支
+
+ES 分支需要一个本地 ES 服务。Windows 上最省事的方式是用 Docker Desktop：
+
+```powershell
+docker run -d --name rag-es -p 9200:9200 `
+  -e "discovery.type=single-node" `
+  -e "xpack.security.enabled=false" `
+  -e "ES_JAVA_OPTS=-Xms512m -Xmx512m" `
+  docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+```
+
+启动后浏览器访问 `http://127.0.0.1:9200`，能看到 `"tagline": "You Know, for Search"` 即为正常。
+
+然后在 Streamlit 左侧切换到“海量文档方案（Elasticsearch）”，点“构建ES索引”，成功后即可用同一批文档检索。
+
+说明：
+
+- 代码里 ES 地址固定为 `http://127.0.0.1:9200`。Windows 上 `localhost` 可能先解析到 IPv6，导致连接超时。
+- 这里关闭了 `xpack.security`，只用于本地演示，不是生产配置。
+- 这是单节点、86 个段落的本地验证，不代表生产级集群或海量数据性能。
+
 ## 演示问题
 
 1. BM25 的 k1 和 b 参数分别控制什么？
@@ -130,7 +178,7 @@ QWEN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 02_rag_doc_qa/
 ├── final_app.py          # Streamlit 主程序
 ├── kb_tool.py            # BM25KBTool：jieba 分词、索引、检索、邻接扩展
-├── es_retrieval.py       # Elasticsearch 检索分支，仅代码与方案，未部署
+├── es_retrieval.py       # Elasticsearch 检索分支：建索引、检索、删除索引
 ├── docs/                 # 14 篇演示文档，共 86 个段落
 ├── images/               # 界面与旧版演示截图
 ├── requirements.txt
@@ -145,7 +193,8 @@ QWEN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 - 拒答依赖提示词和模型判断，不是确定性规则。
 - BM25 对同义表达和多跳问题能力有限。
 - 当前是内存索引，文档更新、并发和权限控制都未做企业级处理。
-- Elasticsearch 分支没有部署，也没有实测性能，不应写成“双检索已落地”。
+- Elasticsearch 只做了本地单节点验证，关闭了安全认证，没有做集群、权限、监控和性能压测；不能写成“生产级双检索”。
+- 86 个段落不构成海量数据，ES 分支的价值是验证扩展路径，不是证明当前项目已经处理过大文档。
 - 当前主链路是应用直接检索后注入提示词，不是模型通过 Function Calling 自动选择工具。
 
 ## 后续计划

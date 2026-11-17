@@ -190,11 +190,17 @@ if st.button("🚀 搜索", type="primary") and query:
                 response = llm.chat([{"role": "user", "content": prompt}])
                 response_list = list(response)
 
-                # 兼容处理流式输出
-                if response_list and isinstance(response_list[-1], dict):
-                    answer = response_list[-1].get("content", "生成失败")
+                # qwen-agent 的 chat() 每轮可能返回「消息列表」，不是单个 dict。
+                # 这里统一拆到最后一层，再取 content，避免页面直接打印原始列表。
+                last = response_list[-1] if response_list else []
+                if isinstance(last, list):
+                    last = last[-1] if last else {}
+                if isinstance(last, dict):
+                    answer = last.get("content", "生成失败")
                 else:
-                    answer = str(response_list[-1]) if response_list else "生成失败"
+                    answer = str(last)
+                if not answer or not str(answer).strip():
+                    answer = "生成失败（模型没有返回内容）"
 
                 st.subheader("🤖 AI综合回答")
                 st.success(answer)

@@ -8,7 +8,9 @@ from elasticsearch.helpers import bulk
 
 
 class ESRetrieval:
-    def __init__(self, host="http://localhost:9200", index_name="doc_index"):
+    # Windows 上 localhost 可能先解析到 IPv6 ::1，而 Docker 的端口映射在部分环境下
+    # 只稳定响应 IPv4，所以这里固定用 127.0.0.1，避免页面切到 ES 时超时。
+    def __init__(self, host="http://127.0.0.1:9200", index_name="doc_index"):
         self.es = Elasticsearch([host])
         self.index_name = index_name
         try:
