@@ -17,6 +17,7 @@ __pycache__/
 *.tmp
 *.bak
 final_app.py.bak_*
+docs_large/
 
 # 旧版、容易误导的演示截图
 images/bm25_demo.png

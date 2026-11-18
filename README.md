@@ -154,7 +154,9 @@ docker run -d --name rag-es -p 9200:9200 `
 
 启动后浏览器访问 `http://127.0.0.1:9200`，能看到 `"tagline": "You Know, for Search"` 即为正常。
 
-然后在 Streamlit 左侧切换到“海量文档方案（Elasticsearch）”，点“构建ES索引”，成功后即可用同一批文档检索。
+ES 分支会递归读取 `docs/` 目录下的 `.txt` / `.md` 文件；大文本测试可以放到 `docs/large/`。当前实现会先保留原有空行段落，超过 700 字的段落再按固定长度滑动切块，重叠 120 字。
+
+然后在 Streamlit 左侧切换到“海量文档方案（Elasticsearch）”，侧边栏会显示读取目录、文件数和片段数；点“构建ES索引”，成功后即可用同一批文档检索。
 
 说明：
 

@@ -10,6 +10,7 @@ AI 搜索类应用（综合版）
 - 侧边栏模式切换、ES 索引管理
 """
 import os
+from pathlib import Path
 import streamlit as st
 from dotenv import load_dotenv
 from es_retrieval import ESRetrieval
@@ -58,7 +59,7 @@ mode = st.sidebar.radio(
 
 # ==================== 工具函数：加载文档 ====================
 def load_documents(docs_dir="./docs"):
-    """读取 docs 目录下所有 txt 文档，按段落切分"""
+    """读取 docs 目录下所有 txt 文档，按段落切分（BM25 演示用）"""
     docs = []
     if not os.path.exists(docs_dir):
         return docs
@@ -70,6 +71,56 @@ def load_documents(docs_dir="./docs"):
                 if para.strip():
                     docs.append({"content": para.strip(), "source": f})
     return docs
+
+
+def chunk_large_text(text, chunk_size=700, overlap=120):
+    """先按空行保留原有段落；只有超长段落才按固定长度滑动切块。"""
+    text = text.replace("\r\n", "\n").strip()
+    if not text:
+        return []
+
+    chunks = []
+    for para in text.split("\n\n"):
+        para = para.strip()
+        if not para:
+            continue
+        if len(para) <= chunk_size:
+            chunks.append(para)
+            continue
+
+        start = 0
+        while start < len(para):
+            end = min(start + chunk_size, len(para))
+            piece = para[start:end].strip()
+            if piece:
+                chunks.append(piece)
+            if end >= len(para):
+                break
+            start += chunk_size - overlap
+    return chunks
+
+
+@st.cache_data(show_spinner=False)
+def load_large_documents(docs_dir="./docs"):
+    """读取 ES 文档目录：递归扫描 txt/md；大文件可放到 docs/large/ 子目录。"""
+    docs = []
+    root = Path(docs_dir)
+    if not root.exists():
+        return docs
+
+    for file in sorted(root.rglob("*")):
+        if file.suffix.lower() not in {".txt", ".md", ".markdown"}:
+            continue
+        text = file.read_text(encoding="utf-8", errors="ignore")
+        source = str(file.relative_to(root))
+        for idx, chunk in enumerate(chunk_large_text(text), start=1):
+            docs.append({
+                "content": chunk,
+                "source": source,
+                "chunk_id": idx,
+            })
+    return docs
+
 
 
 # ==================== 缓存：内存知识库 ====================
@@ -91,14 +142,22 @@ def get_es():
 with st.sidebar:
     if "海量文档" in mode:
         st.header("🗄️ ES 知识库管理")
+        large_root = Path("./docs").resolve()
+        large_chunks = load_large_documents(str(large_root))
+        large_files = {item["source"] for item in large_chunks}
+
+        st.caption(f"读取目录：{large_root}")
+        st.caption(f"发现 {len(large_files)} 个 txt/md，切成 {len(large_chunks)} 个片段")
 
         if st.button("🔄 构建ES索引"):
             with st.spinner("正在构建索引..."):
-                chunks = load_documents()
-                es = get_es()
-                es.delete_index()  # 先清旧索引
-                es.add_documents(chunks)
-                st.success(f"✅ 已索引 {len(chunks)} 个片段！")
+                if not large_chunks:
+                    st.warning("docs 目录里没有 txt/md，先把测试文件放进去。")
+                else:
+                    es = get_es()
+                    es.delete_index()  # 先清旧索引
+                    es.add_documents(large_chunks)
+                    st.success(f"✅ 已索引 {len(large_chunks)} 个片段！")
 
         if st.button("🗑️ 删除ES索引"):
             es = get_es()
